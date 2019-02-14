@@ -107,10 +107,10 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
     self._trans.flush()
 
   def _recv_sasl_message(self):
-    header = self._trans.read(5)
+    header = self._trans_readall(5)
     status, length = struct.unpack(">BI", header)
     if length > 0:
-      payload = self._trans.read(length)
+      payload = self._trans_readall(length)
     else:
       payload = ""
     return status, payload
@@ -172,21 +172,28 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
     return ret + self.__rbuf.read(sz - len(ret))
 
   def _read_frame(self):
-    header = self._trans.read(4)
+    header = self._trans_readall(4)
     (length,) = struct.unpack(">I", header)
     if self.encode:
       # If the frames are encoded (i.e. you're using a QOP of auth-int or
       # auth-conf), then make sure to include the header in the bytes you send to
       # sasl.decode()
-      encoded = header + self._trans.read(length)
+      encoded = header + self._trans_readall(length)
       success, decoded = self.sasl.decode(encoded)
       if not success:
         raise TTransportException(type=TTransportException.UNKNOWN,
                                   message=self.sasl.getError())
     else:
       # If the frames are not encoded, just pass it through
-      decoded = self._trans.read(length)
+      decoded = self._trans_readall(length)
     self.__rbuf = BufferIO(decoded)
+
+  def _trans_readall(self, sz):
+    try:
+      return self._trans.readAll(sz)  # Thrift
+    except AttributeError:
+      from thriftpy.transport import readall
+      return readall(self._trans.read, sz)  # thriftpy
 
   def close(self):
     self._trans.close()
